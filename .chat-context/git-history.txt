@@ -1,0 +1,3 @@
+* 72314fe (HEAD -> feature-pagina-online, origin/feature-pagina-online) ajustes pagina
+* 2d36164 (origin/main, origin/HEAD, main) ajustes pagina online
+* 1cf3232 first commit
