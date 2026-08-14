@@ -301,3 +301,57 @@ nas Fases 3 e 4. Ao expandir o projeto, esta seria a ordem sugerida:
 5. Endurecer o armazenamento de arquivos do Repositório para um bucket
    externo (S3-compatível) em vez de disco local, caso o ambiente de
    produção seja multi-instância.
+
+---
+
+## 14. Guia de deploy — Vercel + Supabase (fluxo recomendado)
+
+Esta seção descreve, em passos práticos, como publicar a aplicação
+usando serviços com camada gratuita: **Vercel** para o Next.js e
+**Supabase** para Postgres + Storage.
+
+Passo a passo resumido
+
+1) Criar repositório no GitHub e enviar (`git push origin main`).
+
+2) Criar projeto no Supabase
+   - No painel do Supabase, crie um novo projeto e copie a `DATABASE_URL`.
+   - Em Storage, crie um bucket chamado `repository` (ou ajuste
+     `SUPABASE_BUCKET` se escolher outro nome).
+   - Copie a `Service Role` key (guarde em `SUPABASE_SERVICE_KEY`).
+
+3) Conectar o repositório ao Vercel
+   - No Vercel, importe o repositório do GitHub.
+   - Em *Settings → Environment Variables* adicione (Production):
+     - `DATABASE_URL` (do Supabase)
+     - `NEXTAUTH_SECRET` (gere com `openssl rand -base64 32`)
+     - `NEXTAUTH_URL` (ex.: `https://seu-site.vercel.app`)
+     - `STORAGE_ADAPTER` = `supabase`
+     - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`
+
+4) Migrações e seed
+   - Use o workflow GitHub Actions incluído (`.github/workflows/migrate-and-seed.yml`):
+     adicione `DATABASE_URL` em *GitHub → Settings → Secrets* para permitir que o
+     workflow aplique `prisma migrate deploy` na `main`.
+   - Alternativamente, execute manualmente (por SSH/CLI):
+
+```bash
+npx prisma migrate deploy
+npm run db:seed
+```
+
+5) Testes pós-deploy
+   - Acesse o site público e faça login com a conta de demonstração:
+     - `admin@catequesesjo.org.br` / `Catequese@2026` (troque a senha)
+   - Verifique uploads, permissões e filtros por nível/comunidade.
+
+Observações importantes
+  - Não exponha `SUPABASE_SERVICE_KEY` no cliente; mantenha-a apenas em
+    variáveis de ambiente do servidor/plataforma.
+  - Configure backups automáticos do banco (Supabase oferece opções)
+    e rotinas de backup para o bucket de arquivos.
+
+Se preferir, eu posso gerar instruções detalhadas com capturas de tela
+para cada etapa (criar projeto no Supabase, onde colar cada secret no
+Vercel, e como verificar o workflow do GitHub). Diga qual parte você
+quer que eu detalhe primeiro.
