@@ -1,0 +1,467 @@
+// ============================================================================
+// Catequese Paróquia São José Operário — Schema do banco de dados
+// ============================================================================
+// Este schema modela as entidades descritas na especificação funcional do
+// sistema. Convenções gerais:
+//  - Chaves primárias técnicas (cuid) nunca são usadas como identificador
+//    "amigável" de negócio (ex.: Class.publicId é separado de Class.id).
+//  - Enums em português quando representam vocabulário de negócio exposto
+//    ao usuário (ex. status, período), para reduzir tradução em várias
+//    camadas do código.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Usuários e autenticação
+// ----------------------------------------------------------------------------
+
+enum Role {
+  ADMIN // Responsável paroquial — acesso completo à paróquia
+  LEVEL_RESPONSIBLE // Responsável de nível — acesso completo ao próprio nível
+}
+
+model User {
+  id           String  @id @default(cuid())
+  name         String
+  email        String  @unique
+  passwordHash String
+  role         Role
+  active       Boolean @default(true)
+
+  // Preenchido somente quando role = LEVEL_RESPONSIBLE.
+  // Unique garante que nunca haja mais de um responsável principal
+  // designado por nível ao mesmo tempo (regra de negócio #51/#76).
+  responsibleLevelId String? @unique
+  responsibleLevel   Level?  @relation("LevelResponsible", fields: [responsibleLevelId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+// ----------------------------------------------------------------------------
+// Comunidades
+// ----------------------------------------------------------------------------
+
+model Community {
+  id   String @id @default(cuid())
+  name String
+  // Sigla oficial: sjop | stcz | sgab — usada no identificador das turmas.
+  sigla String @unique
+
+  rooms          Room[]
+  classes        Class[]
+  calendarEvents CalendarEvent[]
+  notices        Notice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("communities")
+}
+
+// ----------------------------------------------------------------------------
+// Níveis de catequese
+// ----------------------------------------------------------------------------
+
+model Level {
+  id          String @id @default(cuid())
+  name        String
+  // Slug oficial usado no identificador de turmas: pais-padrinhos, infantil,
+  // criancas, adolescentes, jovens, adultos.
+  slug        String @unique
+  description String @db.Text
+  // Ordem de exibição nas listas (segue a ordem oficial da especificação).
+  order       Int    @unique
+  // Define se o identificador de turma deste nível inclui ano-início/ano-fim.
+  usesYearRange Boolean @default(false)
+
+  responsible User? @relation("LevelResponsible")
+
+  classes             Class[]
+  calendarEvents      CalendarEvent[]
+  notices             Notice[]
+  repositoryDocuments RepositoryDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("levels")
+}
+
+// ----------------------------------------------------------------------------
+// Salas
+// ----------------------------------------------------------------------------
+
+model Room {
+  id          String  @id @default(cuid())
+  name        String
+  capacity    Int?
+  active      Boolean @default(true)
+  communityId String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  classes      Class[]
+  yearRecords  ClassYearRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([communityId, name])
+  @@map("rooms")
+}
+
+// ----------------------------------------------------------------------------
+// Catequistas (sem login — apenas cadastro administrativo)
+// ----------------------------------------------------------------------------
+
+model Catechist {
+  id     String  @id @default(cuid())
+  name   String
+  active Boolean @default(true)
+
+  classes     CatechistOnClass[]
+  yearRecords ClassYearRecordCatechist[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("catechists")
+}
+
+model CatechistOnClass {
+  id          String    @id @default(cuid())
+  classId     String
+  catechistId String
+  class       Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  catechist   Catechist @relation(fields: [catechistId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([classId, catechistId])
+  @@map("catechists_on_classes")
+}
+
+// ----------------------------------------------------------------------------
+// Turmas
+// ----------------------------------------------------------------------------
+
+enum Period {
+  MANHA
+  TARDE
+  NOITE
+}
+
+enum Weekday {
+  SEGUNDA
+  TERCA
+  QUARTA
+  QUINTA
+  SEXTA
+  SABADO
+  DOMINGO
+}
+
+enum ClassStatus {
+  ATIVA
+  PLANEJAMENTO
+  CONCLUIDA // "Concluída/Arquivada"
+}
+
+model Class {
+  // Chave técnica — nunca exposta como o "nome" da turma nem usada para
+  // reconstruir o identificador legível.
+  id String @id @default(cuid())
+
+  // Identificador legível, gerado automaticamente (ver src/lib/classIdentifier.ts)
+  // seguindo a convenção: nivel-comunidade-periodo[-anoinicio-anofim][-n]
+  publicId String @unique
+
+  levelId     String
+  communityId String
+  level       Level     @relation(fields: [levelId], references: [id])
+  community   Community @relation(fields: [communityId], references: [id])
+
+  period    Period
+  weekday   Weekday
+  startTime String // formato HH:mm
+  endTime   String // formato HH:mm
+
+  roomId String?
+  room   Room?   @relation(fields: [roomId], references: [id])
+
+  status ClassStatus @default(PLANEJAMENTO)
+
+  // Ano de início/fim de vigência da turma (aplicável sobretudo a Crianças,
+  // Jovens e Adultos, cujo identificador inclui o intervalo de anos).
+  startYear Int?
+  endYear   Int?
+
+  // Sufixo numérico para desambiguar turmas com identificador idêntico
+  // (2, 3, ... — nunca 1 na primeira turma).
+  suffix Int?
+
+  // Usado apenas quando a turma ainda não possui lista individual de
+  // catequizandos cadastrada. Quando existir lista, a contagem real dos
+  // registros individuais prevalece (ver src/lib/classStats.ts).
+  catechumensCountOverride Int?
+
+  notes String? @db.Text
+
+  catechists  CatechistOnClass[]
+  catechumens Catechumen[]
+  yearRecords ClassYearRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([communityId])
+  @@index([levelId])
+  @@index([status])
+  @@map("classes")
+}
+
+// Registro histórico por ano de vigência da turma: preserva sala, catequistas
+// e quantidade de catequizandos vigentes naquele ano, mesmo que os dados
+// "atuais" da turma sejam corrigidos posteriormente.
+model ClassYearRecord {
+  id      String @id @default(cuid())
+  classId String
+  class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  year Int
+
+  roomId String?
+  room   Room?   @relation(fields: [roomId], references: [id])
+
+  catechumensCount Int?
+  notes            String? @db.Text
+
+  catechists ClassYearRecordCatechist[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([classId, year])
+  @@map("class_year_records")
+}
+
+model ClassYearRecordCatechist {
+  id            String          @id @default(cuid())
+  yearRecordId  String
+  catechistId   String
+  yearRecord    ClassYearRecord @relation(fields: [yearRecordId], references: [id], onDelete: Cascade)
+  catechist     Catechist       @relation(fields: [catechistId], references: [id], onDelete: Cascade)
+
+  @@unique([yearRecordId, catechistId])
+  @@map("class_year_record_catechists")
+}
+
+// ----------------------------------------------------------------------------
+// Catequizandos (dados privados — nunca expostos publicamente)
+// ----------------------------------------------------------------------------
+
+model Catechumen {
+  id      String @id @default(cuid())
+  classId String
+  class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  name      String
+  birthDate DateTime
+
+  // Situação sacramental individual.
+  baptized       Boolean @default(false)
+  firstEucharist Boolean @default(false)
+  confirmed      Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([classId])
+  @@map("catechumens")
+}
+
+// ----------------------------------------------------------------------------
+// Calendário
+// ----------------------------------------------------------------------------
+
+enum EventCategory {
+  GERAL
+  PAIS_PADRINHOS
+  INFANTIL
+  CRIANCAS
+  ADOLESCENTES
+  JOVENS
+  ADULTOS
+  CATEQUISTAS
+}
+
+enum EventVisibility {
+  PUBLICO
+  AUTENTICADO
+}
+
+enum EventStatus {
+  CONFIRMADO
+  ADIADO
+  CANCELADO
+}
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  date        DateTime
+  startTime   String?
+  endTime     String?
+  location    String?
+
+  communityId String?
+  community   Community? @relation(fields: [communityId], references: [id])
+
+  levelId String?
+  level   Level?  @relation(fields: [levelId], references: [id])
+
+  category     EventCategory
+  visibility   EventVisibility @default(PUBLICO)
+  status       EventStatus     @default(CONFIRMADO)
+  observations String?         @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+  @@map("calendar_events")
+}
+
+// ----------------------------------------------------------------------------
+// Repositório de documentos
+// ----------------------------------------------------------------------------
+
+enum DocumentCategory {
+  GERAL
+  PAIS_PADRINHOS
+  INFANTIL
+  CRIANCAS
+  ADOLESCENTES
+  JOVENS
+  ADULTOS
+  FORMACAO_CATEQUISTAS
+}
+
+enum DocumentType {
+  ROTEIRO
+  DOCUMENTO
+  APRESENTACAO
+  ATIVIDADE
+  DINAMICA
+  FORMULARIO
+  MATERIAL_FORMACAO
+  OUTRO
+}
+
+enum DocumentVisibility {
+  PUBLICO // qualquer pessoa
+  AUTENTICADO // administrador + responsáveis de nível
+  ADMIN // somente responsável paroquial
+}
+
+model RepositoryDocument {
+  id String @id @default(cuid())
+
+  name        String
+  description String? @db.Text
+  tags        String[]
+
+  category DocumentCategory
+  type     DocumentType
+  year     Int?
+
+  levelId String?
+  level   Level?  @relation(fields: [levelId], references: [id])
+
+  visibility DocumentVisibility @default(AUTENTICADO)
+
+  // Armazenamento em disco fora de /public (ver src/lib/storage.ts).
+  fileName String
+  filePath String
+  mimeType String
+  sizeBytes Int
+
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([visibility])
+  @@map("repository_documents")
+}
+
+// ----------------------------------------------------------------------------
+// Avisos
+// ----------------------------------------------------------------------------
+
+enum NoticeStatus {
+  RASCUNHO
+  PUBLICADO
+  ARQUIVADO
+}
+
+model Notice {
+  id   String @id @default(cuid())
+  title String
+  text  String @db.Text
+
+  publishedAt DateTime?
+  expiresAt   DateTime?
+
+  levelId String?
+  level   Level?  @relation(fields: [levelId], references: [id])
+
+  communityId String?
+  community   Community? @relation(fields: [communityId], references: [id])
+
+  highlighted Boolean      @default(false)
+  status      NoticeStatus @default(RASCUNHO)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("notices")
+}
+
+// ----------------------------------------------------------------------------
+// Auditoria
+// ----------------------------------------------------------------------------
+
+model AuditLog {
+  id     String  @id @default(cuid())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  userName   String // denormalizado — preserva rastreabilidade mesmo se o usuário for removido
+  action     String // ex.: IMPORT_CATECHUMENS, DELETE_CLASS, CHANGE_RESPONSIBLE
+  entityType String
+  entityId   String?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

@@ -1,0 +1,2 @@
+origin	https://github.com/Addllleer/catequese-sjo.git (fetch)
+origin	https://github.com/Addllleer/catequese-sjo.git (push)
