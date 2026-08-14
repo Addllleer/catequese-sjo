@@ -19,7 +19,7 @@ export default async function AdminCommunitiesPage() {
       rooms: { select: { id: true } },
       classes: {
         where: { status: { not: "CONCLUIDA" } },
-        select: { id: true, status: true, catechumensCountOverride: true, catechumens: { select: { id: true } } },
+        select: { id: true, status: true, catechumensCountOverride: true, catechumens: { select: { id: true, baptized: true, firstEucharist: true, confirmed: true } } },
       },
     },
   });

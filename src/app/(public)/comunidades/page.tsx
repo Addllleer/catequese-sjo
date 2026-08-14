@@ -17,7 +17,7 @@ export default async function CommunitiesPage() {
           id: true,
           status: true,
           catechumensCountOverride: true,
-          catechumens: { select: { id: true } },
+            catechumens: { select: { id: true, baptized: true, firstEucharist: true, confirmed: true } },
           level: { select: { name: true } },
         },
       },

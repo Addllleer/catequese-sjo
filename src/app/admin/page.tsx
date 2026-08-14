@@ -25,7 +25,7 @@ export default async function AdminDashboard() {
       where: { levelId: levelScope },
       include: {
         catechists: { select: { catechistId: true } },
-        catechumens: { select: { id: true, baptized: true, firstEucharist: true } },
+        catechumens: { select: { id: true, baptized: true, firstEucharist: true, confirmed: true } },
         level: true,
       },
     }),

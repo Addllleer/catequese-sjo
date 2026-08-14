@@ -28,7 +28,7 @@ export default async function AdminCommunityDetailPage({ params }: { params: { i
       community: true,
       room: true,
       catechists: { include: { catechist: true } },
-      catechumens: { select: { id: true } },
+      catechumens: { select: { id: true, baptized: true, firstEucharist: true, confirmed: true } },
     },
     orderBy: [{ level: { order: "asc" } }, { weekday: "asc" }],
   });

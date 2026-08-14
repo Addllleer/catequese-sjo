@@ -11,7 +11,12 @@ export const dynamic = "force-dynamic";
 export default async function PublicClassPage({ params }: { params: { id: string } }) {
   const cls = await prisma.class.findUnique({
     where: { id: params.id },
-    include: { level: true, community: true, room: true, catechumens: { select: { id: true } } },
+    include: {
+      level: true,
+      community: true,
+      room: true,
+      catechumens: { select: { id: true, baptized: true, firstEucharist: true, confirmed: true } },
+    },
   });
 
   if (!cls) notFound();

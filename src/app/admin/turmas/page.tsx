@@ -21,7 +21,7 @@ export default async function AdminClassesListPage() {
       community: true,
       room: true,
       catechists: { include: { catechist: true } },
-      catechumens: { select: { id: true } },
+      catechumens: { select: { id: true, baptized: true, firstEucharist: true, confirmed: true } },
     },
     orderBy: [{ status: "asc" }, { community: { sigla: "asc" } }, { level: { order: "asc" } }],
   });
